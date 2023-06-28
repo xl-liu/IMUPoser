@@ -5,9 +5,9 @@
 # %%
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning import seed_everything
+from pytorch_lightning.loggers import TensorBoardLogger
 
 from imuposer.config import Config, amass_combos
 from imuposer.models.utils import get_model
@@ -35,7 +35,8 @@ datamodule = get_datamodule(config)
 checkpoint_path = config.checkpoint_path 
 
 # %%
-wandb_logger = WandbLogger(project=config.experiment, save_dir=checkpoint_path)
+# wandb_logger = WandbLogger(project=config.experiment, save_dir=checkpoint_path)
+logger = TensorBoardLogger(save_dir=checkpoint_path, name=config.experiment)
 
 early_stopping_callback = EarlyStopping(monitor="validation_step_loss", mode="min", verbose=False,
                                         min_delta=0.00001, patience=5)
@@ -43,12 +44,18 @@ checkpoint_callback = ModelCheckpoint(monitor="validation_step_loss", mode="min"
                                       save_top_k=5, dirpath=checkpoint_path, save_weights_only=True, 
                                       filename='epoch={epoch}-val_loss={validation_step_loss:.5f}')
 
-trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=1000, accelerator="gpu", devices=[0],
+trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=logger, max_epochs=1000, accelerator="gpu", devices=[0],
                      callbacks=[early_stopping_callback, checkpoint_callback], deterministic=True)
+trainer.logger._log_graph = True
 
 # %%
 trainer.fit(model, datamodule=datamodule)
+print(trainer.checkpoint_callback.best_model_path)
+# best_model = model.load_from_checkpoint()<
 
 # %%
 with open(checkpoint_path / "best_model.txt", "w") as f:
     f.write(f"{checkpoint_callback.best_model_path}\n\n{checkpoint_callback.best_k_models}")
+
+# trainer.test(ckpt_path="best", datamodule=datamodule)
+             

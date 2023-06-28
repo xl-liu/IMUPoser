@@ -15,6 +15,8 @@ class GlobalModelDataset(Dataset):
     def load_data(self):
         if self.train == "train":
             data_files = [x.name for x in self.config.processed_imu_poser_25fps.iterdir() if "dip" not in x.name]
+            # data_files = [x.name for x in self.config.processed_imu_poser.iterdir() if "dip" not in x.name]
+
         else:
             data_files = ["dip_test.pt"]
 
@@ -23,6 +25,7 @@ class GlobalModelDataset(Dataset):
 
         for fname in data_files:
             fdata = torch.load(self.config.processed_imu_poser_25fps / fname)
+            # fdata = torch.load(self.config.processed_imu_poser / fname)
 
             for i in range(len(fdata["acc"])):
                 # inputs

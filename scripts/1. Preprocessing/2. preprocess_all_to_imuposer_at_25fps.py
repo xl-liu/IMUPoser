@@ -10,7 +10,8 @@ from imuposer.config import Config
 from imuposer import math
 # -
 
-config = Config(project_root_dir="../../")
+# config = Config(project_root_dir="../../")
+config = Config(experiment='test0')
 
 # +
 target_fps = 25

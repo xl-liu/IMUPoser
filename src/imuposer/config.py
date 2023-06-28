@@ -10,7 +10,9 @@ class Config:
                  use_vposer_loss=False, use_vel_loss=False):
         self.experiment = experiment
         self.model = model
-        self.root_dir = Path(project_root_dir).absolute()
+        # self.root_dir = Path(project_root_dir).absolute()
+        # self.root_dir = Path('home/xintliu/IMUPoser').absolute()
+        self.root_dir = Path(__file__).parents[2]
         self.joints_set = joints_set
         self.pred_joints_set = [*range(24)] if pred_joints_set == None else pred_joints_set
 
@@ -38,10 +40,11 @@ class Config:
     
     def build_paths(self):
         self.smpl_model_path = self.root_dir / "src/imuposer/smpl/model.pkl"
+        print(self.root_dir)
         self.og_smpl_model_path = self.root_dir / "src/imuposer/smpl/basicmodel_m_lbs_10_207_0_v1.0.0.pkl"
         
-        self.raw_dip_path = self.root_dir / "data/raw/DIP_IMU"
-        self.raw_amass_path = self.root_dir / "data/raw/AMASS"
+        self.raw_dip_path = self.root_dir.parent / "data/DIP_IMU_and_Others/DIP_IMU"
+        self.raw_amass_path = self.root_dir.parent / "data/AMASS"
 
         self.processed_imu_poser = self.root_dir / "data/processed_imuposer"
         self.processed_imu_poser_25fps = self.root_dir / "data/processed_imuposer_25fps"
@@ -137,6 +140,7 @@ amass_datasets = ['ACCAD', 'BioMotionLab_NTroje', 'BMLhandball', 'BMLmovi', 'CMU
                   'DanceDB', 'DFaust_67', 'EKUT', 'Eyes_Japan_Dataset', 'HUMAN4D',
                   'HumanEva', 'KIT', 'MPI_HDM05', 'MPI_Limits', 'MPI_mosh', 'SFU',
                   'SSM_synced', 'TCD_handMocap', 'TotalCapture', 'Transitions_mocap']
+# amass_datasets = ['ACCAD']
 
 leaf_joints = [20, 21, 7, 8, 12]
 

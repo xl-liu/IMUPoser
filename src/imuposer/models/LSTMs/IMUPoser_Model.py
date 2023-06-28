@@ -10,6 +10,7 @@ from imuposer.models.loss_functions import *
 from imuposer.smpl.parametricModel import ParametricModel
 from imuposer.math.angular import r6d_to_rotation_matrix
 from imuposer.config import Config
+from evaluate import PoseEvaluator
 
 class IMUPoserModel(pl.LightningModule):
     r"""
@@ -41,6 +42,8 @@ class IMUPoserModel(pl.LightningModule):
         self.lr = 3e-4
         self.save_hyperparameters()
 
+        self.pose_evaluator = PoseEvaluator()
+
     def forward(self, imu_inputs, imu_lens):
         pred_pose, _, _ = self.dip_model(imu_inputs, imu_lens)
         return pred_pose
@@ -61,6 +64,7 @@ class IMUPoserModel(pl.LightningModule):
             loss += joint_pos_loss
 
         self.log(f"training_step_loss", loss.item(), batch_size=self.batch_size)
+        # self.log(f"train_acc", acc, on_step=False, on_epoch=True)
 
         return {"loss": loss}
 
@@ -79,7 +83,16 @@ class IMUPoserModel(pl.LightningModule):
             joint_pos_loss = self.loss(pred_joint, target_joint)
             loss += joint_pos_loss
 
+        if self.config.r6d:
+                pred_pose = r6d_to_rotation_matrix(pred_pose).view(-1, 216)
+                target_pose = r6d_to_rotation_matrix(target_pose).view(-1, 216)
+        err_vals = self.pose_evaluator.eval(pred_pose, target_pose)
+        err_keys = ['SIP Error (deg)', 'Angular Error (deg)', 'Positional Error (cm)',
+                                  'Mesh Error (cm)', 'Jitter Error (100m/s^3)']
+        errs = {err_keys[i]:err_vals[i] for i in range(5)}
+
         self.log(f"validation_step_loss", loss.item(), batch_size=self.batch_size)
+        self.log(f"val_err", errs)
 
         return {"loss": loss}
 
@@ -97,6 +110,9 @@ class IMUPoserModel(pl.LightningModule):
             target_joint = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(target_pose).view(-1, 216))[1] ## If training is slow, get this from the dataloader
             joint_pos_loss = self.loss(pred_joint, target_joint)
             loss += joint_pos_loss
+
+        acc = 0.0
+        self.log(f"test_acc", acc)
 
         return {"loss": loss.item(), "pred": pred_pose, "true": target_pose}
 
