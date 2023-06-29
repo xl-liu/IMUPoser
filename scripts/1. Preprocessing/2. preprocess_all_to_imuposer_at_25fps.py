@@ -57,7 +57,7 @@ path_to_save.mkdir(exist_ok=True, parents=True)
 11*25/60
 
 # process AMASS first
-for fpath in (config.processed_imu_poser / "AMASS").iterdir():
+for fpath in (config.processed_imu_poser_25fps / "AMASS").iterdir():
     # resample to 25 fps
     joint = [_resample(x, target_fps) for x in torch.load(fpath / "joint.pt")]
     pose = [math.axis_angle_to_rotation_matrix(_resample(x, target_fps).contiguous()).view(-1, 24, 3, 3) for x in torch.load(fpath / "pose.pt")]

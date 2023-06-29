@@ -48,7 +48,8 @@ class Config:
 
         self.processed_imu_poser = self.root_dir / "data/processed_imuposer"
         self.processed_imu_poser_25fps = self.root_dir / "data/processed_imuposer_25fps"
-
+        self.processed_imu_poser_new = self.root_dir / "data/processed_imuposer_new"
+         
         self.vposer_ckpt_path = self.root_dir / "extern/vposer_v2_05"
 
         if self.mkdir:

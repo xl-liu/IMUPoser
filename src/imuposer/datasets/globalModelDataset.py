@@ -72,6 +72,9 @@ class GlobalModelDataset(Dataset):
 
         _input = _imu
         if self.config.r6d == True:
+            # print('----------------------------')
+            # print(_pose.shape)
+            # print(math.rotation_matrix_to_r6d(_pose).shape)
             _output = math.rotation_matrix_to_r6d(_pose).reshape(-1, 24, 6)[:, self.config.pred_joints_set].reshape(-1, 6 * len(self.config.pred_joints_set))
         else:
             _output = _pose

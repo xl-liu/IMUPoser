@@ -13,76 +13,12 @@ import pickle
 import numpy as np
 from tqdm import tqdm
 import glob
-from scipy.interpolate import splrep, splev
 
 from imuposer.config import Config, amass_datasets
 from imuposer.smpl.parametricModel import ParametricModel
 from imuposer import math
 
-from scipy.signal import firwin
-from scipy import signal
-
-# config = Config(project_root_dir="../../")
-config = Config(experiment='test1')
-
-TARGET_FPS = 25
-# DIP masks
-# VI_MASK = [1962, 5431, 1096, 4583, 412, 3021]
-VI_MASK = [1961, 5424, 1176, 4662, 411, 3021] # transpose
-JI_MASK = [18, 19, 4, 5, 15, 0]
-
-# IMUPoser masks
-# left wrist, right wrist, left thigh, right thigh, head, pelvis
-# vi_mask = torch.tensor([1961, 5424, 876, 4362, 411, 3021])
-# ji_mask = torch.tensor([18, 19, 1, 2, 15, 0])
-
-def get_acc_fd(v):
-    r"""
-    fd accelerations from vertex positions.
-    """
-    n = len(v)
-    h = 1/TARGET_FPS
-    # reshape the input 
-    v = v.reshape(-1, 18)   # 6x3
-    # v = v.detach().numpy()
-
-    # filter the trajectory
-    b = firwin(10, 0.2)
-    a = 1
-    f = signal.filtfilt(b, a, v, axis=0)
-
-    acc = np.zeros(np.shape(f))
-    for i in range(4, n-4):
-        acc[i,:] = (1/(h**2)) * (-1/560*f[i+4,:] + 8/315*f[i+3,:] - 1/5*f[i+2,:] + 8/5*f[i+1,:] - 205/72*f[i,:] 
-                            + 8/5*f[i-1,:] - 1/5*f[i-2,:] + 8/315*f[i-3,:] - 1/560*f[i-4,:])
-    acc[:4,:] = acc[4,:]
-    acc[-4:,:] = acc[-5,:]
-    # reshape the output 
-    acc = torch.reshape(torch.tensor(acc, dtype=torch.float), (-1, 6, 3))
-
-    return acc
-
-def interpolate_poses(poses, fps_in, fps_out):
-    """
-    interpolate the orignal poses to the target datarate 
-    poses: nx156
-    """
-
-    # TODO: use quaternion spline 
-
-    poses_out = []
-    n_frames = np.shape(poses)[0]
-    t_in = np.linspace(0, n_frames/fps_in, n_frames)
-    t_out = np.linspace(0, n_frames/fps_out, n_frames)
-    n = np.shape(poses)[1]
-    
-    for i in range(n):
-        spl = splrep(t_in, poses[:, i])
-        poses_out.append(splev(t_out, spl))
-
-    poses_out = np.array(poses_out).T
-
-    return poses_out
+config = Config(project_root_dir="../../")
 
 def process_amass():
     def _syn_acc(v):
@@ -93,13 +29,15 @@ def process_amass():
         acc = torch.cat((torch.zeros_like(acc[:1]), acc, torch.zeros_like(acc[:1])))
         return acc
 
+    # left wrist, right wrist, left thigh, right thigh, head, pelvis
+    vi_mask = torch.tensor([1961, 5424, 876, 4362, 411, 3021])
+    ji_mask = torch.tensor([18, 19, 1, 2, 15, 0])
     body_model = ParametricModel(config.og_smpl_model_path)
 
     try:
         processed = [fpath.name for fpath in (config.processed_imu_poser / "AMASS").iterdir()]
     except:
         processed = []
-    # processed = []
 
     for ds_name in amass_datasets:
         if ds_name in processed:
@@ -111,16 +49,14 @@ def process_amass():
             except: continue
 
             framerate = int(cdata['mocap_framerate'])
-            if cdata['poses'].shape[0] <=10:
-                continue
-            if framerate != TARGET_FPS:
-                poses = interpolate_poses(cdata['poses'], framerate, TARGET_FPS)
-                trans = interpolate_poses(cdata['trans'], framerate, TARGET_FPS)
-            
-            data_pose.extend(poses.astype(np.float32))
-            data_trans.extend(trans.astype(np.float32))
+            if framerate == 120: step = 2
+            elif framerate == 60 or framerate == 59: step = 1
+            else: continue
+
+            data_pose.extend(cdata['poses'][::step].astype(np.float32))
+            data_trans.extend(cdata['trans'][::step].astype(np.float32))
             data_beta.append(cdata['betas'][:10])
-            length.append(poses.shape[0])
+            length.append(cdata['poses'][::step].shape[0])
 
         if len(data_pose) == 0:
             print(f"AMASS dataset, {ds_name} not supported")
@@ -145,18 +81,15 @@ def process_amass():
         b = 0
         out_pose, out_shape, out_tran, out_joint, out_vrot, out_vacc = [], [], [], [], [], []
         for i, l in tqdm(list(enumerate(length))):
-            if l <= 30: b += l; print('\tdiscard one sequence with length', l); continue
+            if l <= 12: b += l; print('\tdiscard one sequence with length', l); continue
             p = math.axis_angle_to_rotation_matrix(pose[b:b + l]).view(-1, 24, 3, 3)
             grot, joint, vert = body_model.forward_kinematics(p, shape[i], tran[b:b + l], calc_mesh=True)
             out_pose.append(pose[b:b + l].clone())  # N, 24, 3
             out_tran.append(tran[b:b + l].clone())  # N, 3
             out_shape.append(shape[i].clone())  # 10
             out_joint.append(joint[:, :24].contiguous().clone())  # N, 24, 3
-            # out_vacc.append(_syn_acc(vert[:, VI_MASK]))  # N, 6, 3
-            # TODO:
-            tmp_acc = get_acc_fd(vert[:, VI_MASK])
-            out_vacc.append(tmp_acc)
-            out_vrot.append(grot[:, JI_MASK])  # N, 6, 3, 3
+            out_vacc.append(_syn_acc(vert[:, vi_mask]))  # N, 6, 3
+            out_vrot.append(grot[:, ji_mask])  # N, 6, 3, 3
             b += l
 
         print('Saving')
@@ -190,6 +123,10 @@ def process_dipimu(split="test"):
     accs, oris, poses, trans, shapes, joints, vrots, vaccs = [], [], [], [], [], [], [], []
     
     body_model = ParametricModel(config.og_smpl_model_path)
+    
+    # left wrist, right wrist, left thigh, right thigh, head, pelvis
+    vi_mask = torch.tensor([1961, 5424, 876, 4362, 411, 3021])
+    ji_mask = torch.tensor([18, 19, 1, 2, 15, 0])
 
     for subject_name in test_split:
         for motion_name in os.listdir(os.path.join(config.raw_dip_path, subject_name)):
@@ -220,8 +157,8 @@ def process_dipimu(split="test"):
                 # forward kinematics to get the joint position
                 p = math.axis_angle_to_rotation_matrix(pose).view(-1, 24, 3, 3)
                 grot, joint, vert = body_model.forward_kinematics(p, shape, tran, calc_mesh=True)
-                vacc = get_acc_fd(vert[:, VI_MASK])
-                vrot = grot[:, JI_MASK]
+                vacc = _syn_acc(vert[:, vi_mask])
+                vrot = grot[:, ji_mask]
                 
                 joints.append(joint)
                 vaccs.append(vacc)
@@ -244,6 +181,6 @@ def process_dipimu(split="test"):
     print('Preprocessed DIP-IMU dataset is saved at', path_to_save)
 
 if __name__ == '__main__':
-    # process_dipimu(split="test")
-    # process_dipimu(split="train")
+    process_dipimu(split="test")
+    process_dipimu(split="train")
     process_amass()

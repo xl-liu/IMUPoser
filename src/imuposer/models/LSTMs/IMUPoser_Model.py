@@ -83,20 +83,20 @@ class IMUPoserModel(pl.LightningModule):
             joint_pos_loss = self.loss(pred_joint, target_joint)
             loss += joint_pos_loss
 
-        if self.config.r6d:
-                pred_pose = r6d_to_rotation_matrix(pred_pose).view(-1, 216)
-                target_pose = r6d_to_rotation_matrix(target_pose).view(-1, 216)
-        err_vals = self.pose_evaluator.eval(pred_pose, target_pose)
-        err_keys = ['SIP Error (deg)', 'Angular Error (deg)', 'Positional Error (cm)',
-                                  'Mesh Error (cm)', 'Jitter Error (100m/s^3)']
-        errs = {err_keys[i]:err_vals[i] for i in range(5)}
+        # if self.config.r6d:
+        #         pred_pose = r6d_to_rotation_matrix(pred_pose).view(-1, 216)
+        #         target_pose = r6d_to_rotation_matrix(target_pose).view(-1, 216)
+        # err_vals = self.pose_evaluator.eval(pred_pose, target_pose)
+        # err_keys = ['SIP Error (deg)', 'Angular Error (deg)', 'Positional Error (cm)',
+        #                           'Mesh Error (cm)', 'Jitter Error (100m/s^3)']
+        # errs = {err_keys[i]:err_vals[i] for i in range(5)}
+        # self.log(f"val_err", errs)
 
         self.log(f"validation_step_loss", loss.item(), batch_size=self.batch_size)
-        self.log(f"val_err", errs)
 
         return {"loss": loss}
 
-    def predict_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx):
         imu_inputs, target_pose, input_lengths, _ = batch
 
         _pred = self(imu_inputs, input_lengths)
@@ -111,8 +111,14 @@ class IMUPoserModel(pl.LightningModule):
             joint_pos_loss = self.loss(pred_joint, target_joint)
             loss += joint_pos_loss
 
-        acc = 0.0
-        self.log(f"test_acc", acc)
+        if self.config.r6d:
+                pred_pose = r6d_to_rotation_matrix(pred_pose).view(-1, 216)
+                target_pose = r6d_to_rotation_matrix(target_pose).view(-1, 216)
+        err_vals = self.pose_evaluator.eval(pred_pose, target_pose)
+        err_keys = ['SIP Error (deg)', 'Angular Error (deg)', 'Positional Error (cm)',
+                                  'Mesh Error (cm)', 'Jitter Error (100m/s^3)']
+        errs = {err_keys[i]:err_vals[i] for i in range(5)}
+        self.log(f"test_err", errs)
 
         return {"loss": loss.item(), "pred": pred_pose, "true": target_pose}
 

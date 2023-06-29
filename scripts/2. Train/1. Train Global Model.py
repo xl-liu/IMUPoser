@@ -13,6 +13,7 @@ from imuposer.config import Config, amass_combos
 from imuposer.models.utils import get_model
 from imuposer.datasets.utils import get_datamodule
 from imuposer.utils import get_parser
+from imuposer.datasets import GlobalModelDataset
 
 # set the random seed
 seed_everything(42, workers=True)
@@ -46,16 +47,16 @@ checkpoint_callback = ModelCheckpoint(monitor="validation_step_loss", mode="min"
 
 trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=logger, max_epochs=1000, accelerator="gpu", devices=[0],
                      callbacks=[early_stopping_callback, checkpoint_callback], deterministic=True)
-trainer.logger._log_graph = True
+# trainer.logger._log_graph = True
 
 # %%
-trainer.fit(model, datamodule=datamodule)
-print(trainer.checkpoint_callback.best_model_path)
-# best_model = model.load_from_checkpoint()<
+# trainer.fit(model, datamodule=datamodule)
 
 # %%
-with open(checkpoint_path / "best_model.txt", "w") as f:
-    f.write(f"{checkpoint_callback.best_model_path}\n\n{checkpoint_callback.best_k_models}")
+# with open(checkpoint_path / "best_model.txt", "w") as f:
+#     f.write(f"{checkpoint_callback.best_model_path}\n\n{checkpoint_callback.best_k_models}")
 
-# trainer.test(ckpt_path="best", datamodule=datamodule)
-             
+# trainer.test(ckpt_path=checkpoint_callback.best_model_path, datamodule=datamodule)
+bm = model.load_from_checkpoint('/local/home/xintliu/IMUPoser/checkpoints/test0_global-06292023-011031/epoch=epoch=50-val_loss=validation_step_loss=0.01359.ckpt')
+# trainer.test(bm, GlobalModelDataset("test", config))
+trainer.test(bm, datamodule)
