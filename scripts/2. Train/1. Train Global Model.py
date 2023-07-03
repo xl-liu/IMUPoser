@@ -40,23 +40,24 @@ checkpoint_path = config.checkpoint_path
 logger = TensorBoardLogger(save_dir=checkpoint_path, name=config.experiment)
 
 early_stopping_callback = EarlyStopping(monitor="validation_step_loss", mode="min", verbose=False,
-                                        min_delta=0.00001, patience=5)
+                                        min_delta=0.00001, patience=15)
 checkpoint_callback = ModelCheckpoint(monitor="validation_step_loss", mode="min", verbose=False, 
-                                      save_top_k=5, dirpath=checkpoint_path, save_weights_only=True, 
+                                      save_top_k=1, dirpath=checkpoint_path, save_weights_only=True, 
                                       filename='epoch={epoch}-val_loss={validation_step_loss:.5f}')
 
 trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=logger, max_epochs=1000, accelerator="gpu", devices=[0],
                      callbacks=[early_stopping_callback, checkpoint_callback], deterministic=True)
-# trainer.logger._log_graph = True
+trainer.logger._log_graph = True
 
 # %%
-# trainer.fit(model, datamodule=datamodule)
+trainer.fit(model, datamodule=datamodule)
 
 # %%
-# with open(checkpoint_path / "best_model.txt", "w") as f:
-#     f.write(f"{checkpoint_callback.best_model_path}\n\n{checkpoint_callback.best_k_models}")
+with open(checkpoint_path / "best_model.txt", "w") as f:
+    f.write(f"{checkpoint_callback.best_model_path}\n\n{checkpoint_callback.best_k_models}")
 
-# trainer.test(ckpt_path=checkpoint_callback.best_model_path, datamodule=datamodule)
-bm = model.load_from_checkpoint('/local/home/xintliu/IMUPoser/checkpoints/test0_global-06292023-011031/epoch=epoch=50-val_loss=validation_step_loss=0.01359.ckpt')
-# trainer.test(bm, GlobalModelDataset("test", config))
-trainer.test(bm, datamodule)
+trainer.test(ckpt_path=checkpoint_callback.best_model_path, datamodule=datamodule)
+
+# # load the best model and test
+# bm = model.load_from_checkpoint('/local/home/xintliu/IMUPoser/checkpoints/test0_global-06292023-011031/epoch=epoch=50-val_loss=validation_step_loss=0.01359.ckpt')
+# trainer.test(bm, datamodule)

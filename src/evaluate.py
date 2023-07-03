@@ -173,5 +173,5 @@ def evaluate_pose(dataset, num_past_frame=20, num_future_frame=5):
 
 if __name__ == '__main__':
     # torch.backends.cudnn.enabled = False   # if cudnn error, uncomment this line
-    evaluate_pose(config.processed_imu_poser_25fps / 'dip_test.py')
+    evaluate_pose(config.processed_imu_poser_new / 'dip_test.py')
     # evaluate_pose(paths.totalcapture_dir)
