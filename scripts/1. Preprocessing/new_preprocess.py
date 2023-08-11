@@ -18,15 +18,17 @@ from scipy.signal import firwin
 from scipy import signal
 # import torchaudio.transforms as T
 import torch.nn.functional as F
+from noise import NoiseGenerator
 # TODO: fix torchaudio
 
 # config = Config(project_root_dir="../../")
 # config = Config(experiment='test1')
 config = Config()
-path_to_save = config.processed_imu_poser_new
+# path_to_save = config.processed_imu_poser_new
+path_to_save = config.processed_imu_poser_noisy
 path_to_save.mkdir(exist_ok=True, parents=True)
 
-TARGET_FPS = 25
+TARGET_FPS = config.target_fps
 # DIP masks
 # VI_MASK = [1962, 5431, 1096, 4583, 412, 3021]
 VI_MASK = [1961, 5424, 1176, 4662, 411, 3021] # transpose
@@ -37,7 +39,7 @@ JI_MASK = [18, 19, 4, 5, 15, 0]
 # vi_mask = torch.tensor([1961, 5424, 876, 4362, 411, 3021])
 # ji_mask = torch.tensor([18, 19, 1, 2, 15, 0])
 
-def get_acc_fd(v):
+def get_acc_fd(v, noise=False):
     r"""
     fd accelerations from vertex positions.
     """
@@ -58,10 +60,58 @@ def get_acc_fd(v):
                             + 8/5*f[i-1,:] - 1/5*f[i-2,:] + 8/315*f[i-3,:] - 1/560*f[i-4,:])
     acc[:4,:] = acc[4,:]
     acc[-4:,:] = acc[-5,:]
+
     # reshape the output 
     acc = torch.reshape(torch.tensor(acc, dtype=torch.float), (-1, 6, 3))
 
+    if noise:
+        acc = add_noise(acc)
+
     return acc
+
+def add_noise(acc, ori=None):
+    """
+    add noise to the synthetic imu data based on total capture imu's allan variance 
+    """
+    ng = NoiseGenerator()
+    dt = 1.0/TARGET_FPS
+    l = acc.shape[0]
+    for i in range(3):
+        n = config.acc_random_walk[i]
+        b = config.acc_bias[i]
+        for j in range(6):
+            noise = ng.generate(dt, l, colour=ng.white(n)) + ng.generate(dt, l, colour=ng.pink(b))
+            # noise is always of even length
+            if len(noise) != l:
+                noise = np.append(noise, 0)
+            acc[:,j,i] += noise
+
+    if ori is not None:
+        n = config.ori_random_walk[i]
+        b = config.ori_bias[i]
+        ori_out = ori.clone()
+        return acc, ori_out
+    else:
+        return acc
+
+def process_accel(vertices, ori):
+    # get global acceleration from the vertex positions
+    acc = get_acc_fd(vertices)
+
+    # add gravity
+    acc += np.array([0, 9.8707, 0])
+
+    # convert to local frame
+    acc = torch.matmul(ori, acc)
+
+    # add noise
+    acc, ori_out = add_noise(acc, ori)
+
+    # convert back to global frame 
+
+    # remove gravity
+
+    return acc_out, ori_out
 
 def resample(data_in, fps_in=60, fps_out=TARGET_FPS):
     """
@@ -77,10 +127,21 @@ def resample(data_in, fps_in=60, fps_out=TARGET_FPS):
     
     interp = interp1d(t_in, data_in, axis=0)
     poses_out = interp(t_out)
-    if type(poses_out) == torch.Tensor:
-        poses_out = torch.tensor(interp(t_out), dtype=torch.float)
+    if type(data_in) == torch.Tensor:
+        poses_out = torch.tensor(poses_out, dtype=torch.float)
 
     return poses_out
+
+def smooth_avg(acc=None, s=3):
+    nan_tensor = (torch.zeros((s // 2, acc.shape[1], acc.shape[2])) * torch.nan)
+    acc = torch.cat((nan_tensor, acc, nan_tensor))
+    tensors = []
+    for i in range(s):
+        L = acc.shape[0]
+        tensors.append(acc[i:L-(s-i-1)])
+
+    smoothed = torch.stack(tensors).nanmean(dim=0)
+    return smoothed
 
 def process_amass(body_model=ParametricModel(config.og_smpl_model_path)):
     # TODO: add and subtract gravity
@@ -146,7 +207,8 @@ def process_amass(body_model=ParametricModel(config.og_smpl_model_path)):
             out_shape.append(shape[i].clone())  # 10
             out_joint.append(joint[:, :24].contiguous().clone())  # N, 24, 3
             # out_vacc.append(_syn_acc(vert[:, VI_MASK]))  # N, 6, 3
-            out_vacc.append(get_acc_fd(vert[:, VI_MASK]))
+            vacc = get_acc_fd(vert[:, VI_MASK], noise=True) # add noise
+            out_vacc.append(smooth_avg(vacc,5))   # smooth
             out_vrot.append(grot[:, JI_MASK])  # N, 6, 3, 3
             b += l
 
@@ -190,7 +252,7 @@ def process_dipimu(split="test", body_model=ParametricModel(config.og_smpl_model
             shape = torch.ones((10))
             tran = torch.zeros(pose.shape[0], 3) # dip-imu does not contain translations
             if torch.isnan(acc).sum() == 0 and torch.isnan(ori).sum() == 0 and torch.isnan(pose).sum() == 0:
-                accs.append(resample(acc.clone()))
+                accs.append(resample(smooth_avg(acc.clone()), 5))
                 oris.append(resample(ori.clone()))
                 trans.append(resample(tran.clone()))
                 shapes.append(resample(shape.clone())) # default shape
@@ -227,63 +289,65 @@ def process_dipimu(split="test", body_model=ParametricModel(config.og_smpl_model
     print('Preprocessed DIP-IMU dataset is saved at', path_to_save)
 
 def process_totalcapture(split="test", body_model=ParametricModel(config.og_smpl_model_path)):
-    out_joint, out_pose, out_shape, out_tran, out_acc, out_rot = [], [], [], [], [], []
-    imu_mask = [7, 8, 9, 10, 0, 2]
+    inches_to_meters = 0.0254
+    imu_mask = [5, 6, 7, 8, 0, 2]
+    raw_tc_path = config.raw_totalcapture_path
+
     if split == "test":
-        test_split = ['s_09', 's_10']
+        test_split = [x.name for x in raw_tc_path.iterdir() if "s1" in x.name or "s2" in x.name]
     else:
-        test_split = ['s_01', 's_02', 's_03', 's_04', 's_05', 's_06', 's_07', 's_08']
+        test_split = [x.name for x in raw_tc_path.iterdir() if "s1" not in x.name]
     accs, oris, poses, trans, shapes, joints, vrots, vaccs = [], [], [], [], [], [], [], []
     
-    for subject_name in test_split:
-        for motion_name in os.listdir(os.path.join(config.raw_dip_path, subject_name)):
-            path = os.path.join(config.raw_dip_path, subject_name, motion_name)
-            data = pickle.load(open(path, 'rb'), encoding='latin1')
-            acc = torch.from_numpy(data['imu_acc'][:, imu_mask]).float()
-            ori = torch.from_numpy(data['imu_ori'][:, imu_mask]).float()
-            pose = torch.from_numpy(data['gt']).float()
+    for action_sequence in test_split:
+        path = os.path.join(raw_tc_path, action_sequence)
+        data = pickle.load(open(path, 'rb'), encoding='latin1')
 
-            # fill nan with nearest neighbors
-            for _ in range(4):
-                acc[1:].masked_scatter_(torch.isnan(acc[1:]), acc[:-1][torch.isnan(acc[1:])])
-                ori[1:].masked_scatter_(torch.isnan(ori[1:]), ori[:-1][torch.isnan(ori[1:])])
-                acc[:-1].masked_scatter_(torch.isnan(acc[:-1]), acc[1:][torch.isnan(acc[:-1])])
-                ori[:-1].masked_scatter_(torch.isnan(ori[:-1]), ori[1:][torch.isnan(ori[:-1])])
+        ori = torch.from_numpy(data['ori']).float()[:, torch.tensor([2, 3, 0, 1, 4, 5])]
+        acc = torch.from_numpy(data['acc']).float()[:, torch.tensor([2, 3, 0, 1, 4, 5])]
+        pose = torch.from_numpy(data['gt']).float().view(-1, 24, 3)
 
-            acc, ori, pose = acc[6:-6], ori[6:-6], pose[6:-6]
-            shape = torch.ones((10))
-            tran = torch.zeros(pose.shape[0], 3) # dip-imu does not contain translations
-            accs.append(resample(acc.clone()))
-            oris.append(resample(ori.clone()))
-            trans.append(resample(tran.clone()))
-            shapes.append(resample(shape.clone())) # default shape
-            
-            # forward kinematics to get the joint position
-            p = math.axis_angle_to_rotation_matrix(pose).view(-1, 24, 3, 3)
-            poses.append(resample(p.clone()))
-            grot, joint, vert = body_model.forward_kinematics(p, shape, tran, calc_mesh=True)
-            # vacc = get_acc_fd(vert[:, VI_MASK])
-            # vrot = grot[:, JI_MASK]
-            joints.append(resample(joint.clone()))
-            # vaccs.append(vacc)
-            # vrots.append(vrot)
+        # acc/ori and gt pose do not match in the dataset
+        if acc.shape[0] < pose.shape[0]:
+            pose = pose[:acc.shape[0]]
+        elif acc.shape[0] > pose.shape[0]:
+            acc = acc[:pose.shape[0]]
+            ori = ori[:pose.shape[0]]
 
+        assert acc.shape[0] == ori.shape[0] and ori.shape[0] == pose.shape[0]
+        accs.append(acc)    # N, 6, 3
+        oris.append(ori)    # N, 6, 3, 3
+        p = math.axis_angle_to_rotation_matrix(pose).view(-1, 24, 3, 3)
+        poses.append(p)  # N, 24, 3
+
+        shapes.append(torch.ones((10)))
+        trans.append(torch.zeros(pose.shape[0], 3)) # tc does not contain translations
+
+        # forward kinematics to get the joint position
+        # grot, joint, vert = body_model.forward_kinematcs(p, torch.ones((10)), torch.zeros(pose.shape[0], 3), calc_mesh=True)
+        # joints.append((joint.clone()))
+
+        # for iacc, pose in zip(accs, poses):
+        #     pose = math.axis_angle_to_rotation_matrix(pose).view(-1, 24, 3, 3)
+        #     _, _, vert = body_model.forward_kinematics(pose, calc_mesh=True)
+        #     vacc = get_acc_fd(vert[:, VI_MASK])
+        #     for imu_id in range(6):
+        #         for i in range(3):
+        #             d = -iacc[:, imu_id, i].mean() + vacc[:, imu_id, i].mean()
+        #             iacc[:, imu_id, i] += d
+
+        out_acc = [resample(smooth_avg(acc, 5)) for acc in accs] 
+        out_ori = [resample(ori) for ori in oris]   
+        out_pose = [resample(pose) for pose in poses]  
         
-        out_joint.extend(joints)
-        out_pose.extend(poses)
-        out_shape.extend(shapes)
-        out_tran.extend(trans)
-        out_acc.extend(accs)
-        out_rot.extend(oris)
-
     # save the data
     fdata = {
-        "joint": out_joint,
+        # "joint": joints,
         "pose": out_pose,
-        "shape": out_shape,
-        "tran": out_tran,
+        "shape": shapes,
+        # "tran": trans,
         "acc": out_acc,
-        "ori": out_rot
+        "ori": out_ori
     }
     torch.save(fdata, path_to_save / f"total_capture_{split}.pt")
     print('Preprocessed TotalCapture dataset is saved at', path_to_save)
@@ -292,4 +356,5 @@ def process_totalcapture(split="test", body_model=ParametricModel(config.og_smpl
 if __name__ == '__main__':
     # process_dipimu(split="test")
     # process_dipimu(split="train")
-    process_amass()
+    # process_amass()
+    process_totalcapture("test")

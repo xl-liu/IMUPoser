@@ -17,3 +17,7 @@ ProcessMocap
 *.png
 *.jpg
 *.jpeg
+
+logs
+
+**/body_models/

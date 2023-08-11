@@ -1,1 +1,1 @@
-from .smpl import *
+from .body_models import *

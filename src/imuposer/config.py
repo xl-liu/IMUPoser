@@ -39,16 +39,19 @@ class Config:
         self.loss_type = loss_type
     
     def build_paths(self):
-        self.smpl_model_path = self.root_dir / "src/imuposer/smpl/model.pkl"
-        print(self.root_dir)
-        self.og_smpl_model_path = self.root_dir / "src/imuposer/smpl/basicmodel_m_lbs_10_207_0_v1.0.0.pkl"
-        
+        self.smplh_model_path = self.root_dir / "src/imuposer/body_models/smplh"
+        self.og_smpl_model_path = self.root_dir / "src/imuposer/body_models/smpl/models/basicmodel_m_lbs_10_207_0_v1.0.0.pkl"
+        self.dmpl_model_path = self.root_dir / "src/imuposer/body_models/dmpl"
+
         self.raw_dip_path = self.root_dir.parent / "data/DIP_IMU_and_Others/DIP_IMU"
         self.raw_amass_path = self.root_dir.parent / "data/AMASS"
+        self.raw_totalcapture_path = self.root_dir.parent / "data/TotalCapture_Real_60FPS"
 
         self.processed_imu_poser = self.root_dir / "data/processed_imuposer"
+        self.processed_imu_poser_dmpl = self.root_dir / "data/processed_imuposer_dmpl"
         self.processed_imu_poser_25fps = self.root_dir / "data/processed_imuposer_25fps"
         self.processed_imu_poser_new = self.root_dir / "data/processed_imuposer_new"
+        self.processed_imu_poser_noisy = self.root_dir / "data/processed_imuposer_noisy"
          
         self.vposer_ckpt_path = self.root_dir / "extern/vposer_v2_05"
 
@@ -59,12 +62,20 @@ class Config:
                 self.checkpoint_path.mkdir(exist_ok=True, parents=True)
             else:
                 print("No experiment name give, can't create dir")
+        self.log_path = self.root_dir / "logs"
 
     max_sample_len = 300
     acc_scale = 30
     train_pct = 0.9
     batch_size = 256
     torch_seed = 0
+    target_fps = 25
+    
+    # TODO: use different values for three axes
+    acc_random_walk = [0.2, 0.3, 0.4]   # m/s^2
+    acc_bias = [0.02,0.02, 0.02]
+    ori_random_walk = 0.05  # degrees   
+    ori_bias = 0
 
 # DIP order
 # 
@@ -137,11 +148,11 @@ pred_joints_set = {
 }
 
 # Add more here if you want
-amass_datasets = ['ACCAD', 'BioMotionLab_NTroje', 'BMLhandball', 'BMLmovi', 'CMU',
-                  'DanceDB', 'DFaust_67', 'EKUT', 'Eyes_Japan_Dataset', 'HUMAN4D',
-                  'HumanEva', 'KIT', 'MPI_HDM05', 'MPI_Limits', 'MPI_mosh', 'SFU',
-                  'SSM_synced', 'TCD_handMocap', 'TotalCapture', 'Transitions_mocap']
-# amass_datasets = ['ACCAD']
+# amass_datasets = ['ACCAD', 'BioMotionLab_NTroje', 'BMLhandball', 'BMLmovi', 'CMU',
+#                   'DanceDB', 'DFaust_67', 'EKUT', 'Eyes_Japan_Dataset', 'HUMAN4D',
+#                   'HumanEva', 'KIT', 'MPI_HDM05', 'MPI_Limits', 'MPI_mosh', 'SFU',
+#                   'SSM_synced', 'TCD_handMocap', 'TotalCapture', 'Transitions_mocap']
+amass_datasets = ['ACCAD']
 
 leaf_joints = [20, 21, 7, 8, 12]
 

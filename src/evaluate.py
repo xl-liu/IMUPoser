@@ -124,7 +124,7 @@ class FullMotionEvaluator(BasePoseEvaluator):
 
 class PoseEvaluator:
     def __init__(self):
-        self._eval_fn = FullMotionEvaluator(config.og_smpl_model_path, joint_mask=torch.tensor([1, 2, 16, 17]))
+        self._eval_fn = FullMotionEvaluator(config.og_smpl_model_path, joint_mask=torch.tensor([1, 2, 16, 17]), fps=config.target_fps)
         # sip_eval_sensors = [1, 2, 16, 17]
     def eval(self, pose_p, pose_t):
         pose_p = pose_p.clone().view(-1, 24, 3, 3)
