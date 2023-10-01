@@ -13,15 +13,21 @@ import pickle
 import numpy as np
 from tqdm import tqdm
 import glob
-from human_body_prior.body_model.body_model import BodyModel
 
-from imuposer.config import Config, amass_datasets
-from imuposer.body_models.parametricModel import ParametricModel
-from imuposer import math
+from src.imuposer.body_models.human_body_prior.body_model import BodyModel
+# from imuposer.body_models.parametricModel import ParametricModel
+
+from src.imuposer.config import Config, amass_datasets
+from src.imuposer import math
 
 config = Config(project_root_dir="../../")
-comp_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+comp_device = torch.device("cuda:" if torch.cuda.is_available() else "cpu")
+print(torch.cuda.get_device_name(comp_device))
+print(torch.cuda.current_device())
 
+# left wrist, right wrist, left thigh, right thigh, head, pelvis
+vi_mask = torch.tensor([1961, 5424, 876, 4362, 411, 3021])
+ji_mask = torch.tensor([18, 19, 1, 2, 15, 0])
 
 def get_global_pose(bodymodel, pose: torch.Tensor):
 
@@ -34,7 +40,7 @@ def get_global_pose(bodymodel, pose: torch.Tensor):
 
     return pose_global
 
-def process_amass():
+def process_amass(use_dmpl=False):
     def _syn_acc(v):
         r"""
         Synthesize accelerations from vertex positions.
@@ -42,10 +48,6 @@ def process_amass():
         acc = torch.stack([(v[i] + v[i + 2] - 2 * v[i + 1]) * 3600 for i in range(0, v.shape[0] - 2)])
         acc = torch.cat((torch.zeros_like(acc[:1]), acc, torch.zeros_like(acc[:1])))
         return acc
-
-    # left wrist, right wrist, left thigh, right thigh, head, pelvis
-    vi_mask = torch.tensor([1961, 5424, 876, 4362, 411, 3021])
-    ji_mask = torch.tensor([18, 19, 1, 2, 15, 0])
 
     try:
         processed = [fpath.name for fpath in (config.processed_imu_poser_dmpl / "AMASS").iterdir()]
@@ -76,7 +78,10 @@ def process_amass():
                 'betas': torch.Tensor(np.repeat(cdata['betas'][:num_betas][np.newaxis], repeats=time_length, axis=0)).to(comp_device), # controls the body shape. Body shape is static
                 'dmpls': torch.Tensor(cdata['dmpls'][:, :num_dmpls]).to(comp_device) # controls soft tissue dynamics
             }
-            body_dmpls = body_model(**body_parms)
+            if use_dmpl:
+                body_data = body_model(**body_parms)
+            else:
+                body_data = body_model(**{k:v for k,v in body_parms.items() if k in ['pose_body', 'betas', 'pose_hand', 'trans', 'root_orient']})
 
             framerate = int(cdata['mocap_framerate'])
             if framerate == 120: step = 2
@@ -87,8 +92,8 @@ def process_amass():
             data_trans.extend(cdata['trans'][::step].astype(np.float32))
             data_beta.append(cdata['betas'][:10])
             length.append(cdata['poses'][::step].shape[0])
-            data_vert.append(body_dmpls.v[::step])
-            data_joint.append(body_dmpls.Jtr[::step])
+            data_vert.append(body_data.v[::step])
+            data_joint.append(body_data.Jtr[::step])
 
         if len(data_pose) == 0:
             print(f"AMASS dataset, {ds_name} not supported")
@@ -215,6 +220,10 @@ def process_dipimu(split="test"):
     torch.save(accs, path_to_save / 'accs.pt')
     
     print('Preprocessed DIP-IMU dataset is saved at', path_to_save)
+
+def process_totalcapture(split='train'):
+
+    return
 
 if __name__ == '__main__':
     # process_dipimu(split="test")

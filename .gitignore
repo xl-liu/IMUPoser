@@ -20,4 +20,6 @@ ProcessMocap
 
 logs
 
-**/body_models/
+# **/body_models/
+
+*.out

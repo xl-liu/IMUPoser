@@ -207,7 +207,7 @@ def process_amass(body_model=ParametricModel(config.og_smpl_model_path)):
             out_shape.append(shape[i].clone())  # 10
             out_joint.append(joint[:, :24].contiguous().clone())  # N, 24, 3
             # out_vacc.append(_syn_acc(vert[:, VI_MASK]))  # N, 6, 3
-            vacc = get_acc_fd(vert[:, VI_MASK], noise=True) # add noise
+            vacc = get_acc_fd(vert[:, VI_MASK], noise=False) # add noise
             out_vacc.append(smooth_avg(vacc,5))   # smooth
             out_vrot.append(grot[:, JI_MASK])  # N, 6, 3, 3
             b += l

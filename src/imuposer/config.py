@@ -48,9 +48,9 @@ class Config:
         self.raw_totalcapture_path = self.root_dir.parent / "data/TotalCapture_Real_60FPS"
 
         self.processed_imu_poser = self.root_dir / "data/processed_imuposer"
-        self.processed_imu_poser_dmpl = self.root_dir / "data/processed_imuposer_dmpl"
         self.processed_imu_poser_25fps = self.root_dir / "data/processed_imuposer_25fps"
-        self.processed_imu_poser_new = self.root_dir / "data/processed_imuposer_new"
+        self.processed_imu_poser_dmpl = self.root_dir / "data/processed_imuposer_dmpl"
+        self.processed_imu_poser_smpl = self.root_dir / "data/processed_imuposer_smpl"
         self.processed_imu_poser_noisy = self.root_dir / "data/processed_imuposer_noisy"
          
         self.vposer_ckpt_path = self.root_dir / "extern/vposer_v2_05"
